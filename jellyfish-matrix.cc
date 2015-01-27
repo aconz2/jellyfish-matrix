@@ -117,6 +117,7 @@ int main(int argc, char *argv[]) {
     }
   }
 
+  // TODO update the header.size() to reflect the number of actual stored k-mers
   /* ---------- Dump to output ---------- */
   {
     boost::timer::auto_cpu_timer t(std::cerr, 2);
