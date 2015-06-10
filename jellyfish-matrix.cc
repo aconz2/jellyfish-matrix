@@ -25,7 +25,8 @@ namespace po = boost::program_options;
 int main(int argc, char *argv[]) {
 
   /* default arguments */
-  int abundance_threshold = 1; // count >= this are considered present in a sample
+  int low_abundance_threshold = 1; // count >= this are considered present in a sample
+  int high_abundance_threshold = std::numeric_limits<int>::max(); // count <= this are considered present in a sample
   int low_prevalence_threshold = 0; // kmers where num samples with kmer >= this are kept
   int high_prevalence_threshold = std::numeric_limits<int>::max(); // kmers where num samples with kmer <= this are kept
   int num_threads = 1;
@@ -39,9 +40,10 @@ int main(int argc, char *argv[]) {
     ("help,h", "Show help message")
     ("input,i", po::value<std::vector<std::string> >(&in_files)->multitoken()->required(), "Input .jf files (ordered)")
     ("output,o", po::value< std::string>(&out_file)->required(), "File to write to")
-    ("abundance,a", po::value<int>(&abundance_threshold)->default_value(abundance_threshold), "Counts >= this are considered present in a sample")
-    ("min", po::value<int>(&low_prevalence_threshold)->default_value(low_prevalence_threshold), "kmers which appear in num samples >= this are kept")
-    ("max", po::value<int>(&high_prevalence_threshold)->default_value(high_prevalence_threshold), "kmers which appear in num samples <= this are kept")
+    ("min-abundance", po::value<int>(&low_abundance_threshold)->default_value(low_abundance_threshold), "Counts >= this are considered present in a sample")
+    ("max-abundance", po::value<int>(&high_abundance_threshold)->default_value(high_abundance_threshold), "Counts <= this are considered present in a sample")
+    ("min-prevalence", po::value<int>(&low_prevalence_threshold)->default_value(low_prevalence_threshold), "kmers which appear in num samples >= this are kept")
+    ("max-prevalance", po::value<int>(&high_prevalence_threshold)->default_value(high_prevalence_threshold), "kmers which appear in num samples <= this are kept")
     ("threads,t", po::value<int>(&num_threads)->default_value(num_threads), "num threads to use");
 
   /* ---------- parse arguments ---------------- */
@@ -106,7 +108,7 @@ int main(int argc, char *argv[]) {
         readers[n]->next();
         int count = readers[n]->val(); 
         presence <<= 1; // shift left, idempotent for start of loop
-        if(count >= abundance_threshold) {
+        if(count <= high_abundance_threshold && count >= low_abundance_threshold) {
           ++present; // increase number of present
           ++presence; // set LSB to 1
         }
