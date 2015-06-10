@@ -2,6 +2,7 @@
 
 #include <string>
 #include <fstream>
+#include <iterator>
 #include <vector>
 #include <set>
 
@@ -19,6 +20,33 @@
 #include <jellyfish/jellyfish.hpp>
 #include <jellyfish/large_hash_iterator.hpp>
 
+struct fastq {
+  std::string id;
+  std::string seq;
+  std::string plus;
+  std::string qual;
+
+  friend std::istream & operator>>(std::istream &is, fastq &record) {
+    std::getline(is, record.id);
+    std::getline(is, record.seq);
+    std::getline(is, record.plus);
+    std::getline(is, record.qual);
+    return is;
+  };
+};
+
+struct fasta {
+  std::string id;
+  std::string seq;
+
+  friend std::istream & operator>>(std::istream &is, fasta &record) {
+    std::getline(is, record.id);
+    std::getline(is, record.seq);
+    return is;
+  };
+
+};
+
 using jellyfish::mer_dna;
 namespace po = boost::program_options;
 /* ========== main ========== */
@@ -27,17 +55,19 @@ int main(int argc, char *argv[]) {
 
   /* default values */
   int num_threads = 1;
-  uint64_t hash_size = 0;
 
   /* manadatory arguments */
   std::string jf_file;
+  std::string fasta_file;
+  std::string fastq_file;
 
-  po::options_description desc("take in a .jf matrix, line seperated reads on stdin, output for each read, the number of haplotypes it contains");
+  po::options_description desc("take in a .jf matrix, fastq file on stdin, output for each read, the number of haplotypes it contains");
   desc.add_options()
     ("help,h", "Show help message")
-    ("jf,j", po::value< std::string>(&jf_file)->required(), ".jf file")
-    //("size,s", po::value<uint64_t>(&hash_size)->default_value(hash_size), "Size of hash")
-    ("threads,t", po::value<int>(&num_threads)->default_value(num_threads), "Number of threads to use");
+    ("jf,j", po::value<std::string>(&jf_file), ".jf file")
+    ("fasta", po::value<std::string>(&fasta_file), "fasta file")
+    ("fastq", po::value<std::string>(&fastq_file), "fastq file");
+    //("threads,t", po::value<int>(&num_threads)->default_value(num_threads), "Number of threads to use")
 
   /* ---------- parse arguments ---------------- */
   po::variables_map vm;
@@ -54,6 +84,11 @@ int main(int argc, char *argv[]) {
     exit(1);
   }
 
+  if(fasta_file == "" && fastq_file == "") {
+    std::cerr << "ERROR: require one of fasta or fastq" << std::endl;
+    exit(1);
+  }
+
   /* ---------- Get header from jf file ----------- */
   std::ifstream jf_file_stream(jf_file);
   if(!jf_file_stream.good()) {
@@ -63,10 +98,11 @@ int main(int argc, char *argv[]) {
   jellyfish::file_header header;
   header.read(jf_file_stream);
 
-  std::cerr << header.size() << std::endl;
-
+  uint64_t hash_size = header.size();
   unsigned int kmer_length = header.key_len() / 2;
-  hash_size = hash_size == 0 ? header.size() : hash_size;
+  std::cerr << hash_size << std::endl;
+  std::cerr << kmer_length << std::endl;
+
   mer_dna::k(kmer_length);
   mer_hash hash(hash_size, header.key_len(), header.val_len(), num_threads, header.max_reprobe());
   hash.ary()->matrix(header.matrix());
@@ -76,34 +112,84 @@ int main(int argc, char *argv[]) {
     boost::timer::auto_cpu_timer t(std::cerr, 2);
     std::cerr << "=== Loading hash ===" << std::endl;
     binary_reader reader(jf_file_stream, &header);
+    
     while(reader.next()) {
       hash.add(reader.key(), reader.val());
     }
+    
   }
 
-  /* ---------- Count k-mers from input ---------- */
-  {
+  /*{
     boost::timer::auto_cpu_timer t(std::cerr, 2);
     std::cerr << "=== Examine reads on stdin ===" << std::endl;
-    std::cerr << "Unique haplotype\tnot found k-mer" << std::endl;
     mer_array* ary = hash.ary();
     uint64_t val;
     mer_dna mer;
-    for(std::string line; std::getline(std::cin, line);) {
-      std::set<uint64_t> vals;
-      int not_found = 0;
-      for(unsigned int i = 0; i < line.size() - kmer_length; ++i) {
-        mer = line.substr(i, kmer_length);
-        //std::string substr = line.substr(i, kmer_length);
-        //mer = substr;
-        if(ary->get_val_for_key(mer, &val)) {
-          vals.emplace(val);
+    std::istream_iterator<fastq> fastq_iter(std::cin);
+    std::istream_iterator<fastq> EOS;
+    while(fastq_iter != EOS) {
+      fastq record = *fastq_iter++;
+      std::cout << record.id << std::endl;
+      for(unsigned int i = 0; i < record.seq.size() - kmer_length + 1; ++i) {
+        mer = record.seq.substr(i, kmer_length);
+        if(!ary->get_val_for_key(mer, &val)) {
+          std::cout << ".";
         } else {
-          not_found++;
+          std::cout << val << " ";
         }
       }
-      std::cout << vals.size() << "\t" << not_found << std::endl;
+      std::cout << std::endl;
+    }
+ }*/
+
+  mer_array* ary = hash.ary();
+  uint64_t val;
+  mer_dna mer;
+
+  // CODE DUPLICATION > 9000
+  if(fasta_file != "") {
+    std::ifstream fasta_if(fasta_file);
+    std::istream_iterator<fasta> fasta_iter(fasta_if);
+    std::istream_iterator<fasta> EOS;
+    boost::timer::auto_cpu_timer t(std::cerr, 2);
+    std::cerr << "=== Examine fasta from " << fasta_file <<  "===" << std::endl;
+    while(fasta_iter != EOS) {
+      fasta record = *fasta_iter++;
+      std::cout << record.id << std::endl;
+      for(unsigned int i = 0; i < record.seq.size() - kmer_length + 1; ++i) {
+        // have to deal with 'N' values here (jellyfish deals with lowercases)
+        if(!(mer.from_chars(record.seq.substr(i, kmer_length).c_str()))) {
+          continue;
+        }
+        // and make sure we are getting the canonical
+        if(ary->get_val_for_key(mer.get_canonical(), &val)) {
+          std::cout << val << "\t";
+        }
+      }
+      std::cout << std::endl;
+    }
+  } else {
+    std::ifstream fastq_if(fastq_file);
+    std::istream_iterator<fastq> fastq_iter(fastq_if);
+    std::istream_iterator<fastq> EOS;
+    boost::timer::auto_cpu_timer t(std::cerr, 2);
+    std::cerr << "=== Examine fastq from " << fastq_file <<  "===" << std::endl;
+    while(fastq_iter != EOS) {
+      fastq record = *fastq_iter++;
+      std::cout << record.id << std::endl;
+      for(unsigned int i = 0; i < record.seq.size() - kmer_length + 1; ++i) {
+        // have to deal with 'N' values here (jellyfish deals with lowercases)
+        if(!(mer.from_chars(record.seq.substr(i, kmer_length).c_str()))) {
+          continue;
+        }
+        // and make sure we are getting the canonical
+        if(ary->get_val_for_key(mer.get_canonical(), &val)) {
+          std::cout << val << "\t";
+        }
+      }
+      std::cout << std::endl;
     }
   }
+ 
   return 0;
 }
