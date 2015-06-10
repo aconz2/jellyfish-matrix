@@ -23,11 +23,13 @@ using jellyfish::mer_dna;
 namespace po = boost::program_options;
 
 int main(int argc, char *argv[]) {
+  //bool canonical = false;
   std::string in_file;
 
   po::options_description desc("Count occurrence of haplotype profiles in a jellyfish matrix");
   desc.add_options()
     ("help,h", "Show help message")
+    //("canonical,c", po::bool_switch(&canonical)->default_value(canonical), "Group 101 and 010, labeled as 010")
     ("input,i", po::value< std::string>(&in_file)->required(), ".jf matrix file");
 
   /* ---------- parse arguments ---------------- */
